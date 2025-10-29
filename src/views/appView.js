@@ -799,20 +799,34 @@ async function handleChatSubmit(event) {
   spinner.className = 'chat-message ai';
   form.parentElement.querySelector('.chat-panel').appendChild(spinner);
   try {
-    const parsed = await parseServicesAndMaterials(quote.chat);
+    const { assistantMessage, parsed } = await parseServicesAndMaterials(quote.chat);
     updateQuote((quote) => {
-      quote.chat.push({ role: 'assistant', content: JSON.stringify(parsed, null, 2) });
-      quote.services = (parsed.services || []).map((service) => ({
-        name: service.name,
-        hours: service.hours,
-        rate: service.rate || 75,
-        total: calculateServiceSubtotal(service.hours, service.rate || 75),
-      }));
-      quote.materials = (parsed.materials || []).map((material) => ({
-        name: material.name,
-        quantity: material.quantity,
-        unit: material.unit || 'unit',
-      }));
+      quote.chat.push({ role: 'assistant', content: assistantMessage });
+      if (parsed?.services?.length) {
+        quote.services = parsed.services.map((service) => {
+          const hours = Number(service.hours);
+          const rate = Number(service.rate);
+          const safeHours = Number.isFinite(hours) ? hours : 0;
+          const safeRate = Number.isFinite(rate) ? rate : 75;
+          return {
+            name: service.name,
+            hours: safeHours,
+            rate: safeRate,
+            total: calculateServiceSubtotal(safeHours, safeRate),
+          };
+        });
+      }
+      if (parsed?.materials) {
+        quote.materials = parsed.materials.map((material) => {
+          const quantity = Number(material.quantity);
+          const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+          return {
+            name: material.name,
+            quantity: safeQuantity,
+            unit: material.unit || 'unit',
+          };
+        });
+      }
       quote.materialsLocked = false;
       quote.materialsResearch = [];
       return recalcTotals(quote);
@@ -821,7 +835,9 @@ async function handleChatSubmit(event) {
   } catch (error) {
     toast(error.message, 'error');
   } finally {
-    spinner.remove();
+    if (spinner.isConnected) {
+      spinner.remove();
+    }
   }
 }
 
